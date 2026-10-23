@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+<title>滚动霓虹 · Rolling Neon</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060f;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  #app { position: fixed; inset: 0; }
+  #scene { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  /* 进度条 */
+  #progWrap { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    width: min(52%, 420px); z-index: 5; pointer-events: none; }
+  #progBar { height: 8px; border-radius: 8px; background: rgba(8,16,32,0.55);
+    border: 1px solid rgba(0,229,255,0.35); overflow: hidden; backdrop-filter: blur(6px); }
+  #progFill { height: 100%; width: 0%; border-radius: 8px;
+    background: linear-gradient(90deg, #00e5ff, #ff2bd6, #ffe14d); transition: width .2s; }
+
+  /* HUD */
+  #hud { position: absolute; top: 0; left: 0; right: 0; padding: 18px 22px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none; z-index: 5; color: #d8f4ff; }
+  .hud-box { background: rgba(8, 16, 32, 0.45); border: 1px solid rgba(0, 229, 255, 0.35);
+    border-radius: 12px; padding: 10px 16px; backdrop-filter: blur(6px);
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.15); }
+  .hud-label { font-size: 11px; letter-spacing: 2px; color: #6fd6ff; opacity: 0.8; }
+  .hud-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 12px rgba(0, 229, 255, 0.8); }
+  .hud-right { text-align: right; }
+  .hud-sub { font-size: 12px; color: #ffd24d; letter-spacing: 1px; margin-top: 2px; }
+
+  /* 全屏遮罩 */
+  .screen { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px; text-align: center; color: #eaf7ff;
+    background: radial-gradient(ellipse at center, rgba(5,8,22,0.55), rgba(3,4,12,0.9)); }
+  .hidden { display: none !important; }
+
+  .title { font-size: clamp(38px, 8vw, 80px); font-weight: 800; letter-spacing: 4px;
+    background: linear-gradient(90deg, #00e5ff, #ff2bd6, #ffe14d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.5)); }
+  .subtitle { font-size: 15px; letter-spacing: 3px; color: #8fd9ff; opacity: 0.9; }
+  .hint { font-size: 14px; line-height: 2; color: #b9e9ff; opacity: 0.85; max-width: 480px; }
+  .hint b { color: #ffe14d; }
+  .key { display: inline-block; min-width: 26px; padding: 2px 8px; margin: 0 2px;
+    border: 1px solid rgba(0,229,255,0.5); border-radius: 6px; background: rgba(0,229,255,0.08);
+    font-size: 12px; color: #cdf4ff; }
+
+  .btn { pointer-events: auto; cursor: pointer; font-size: 18px; font-weight: 700;
+    letter-spacing: 3px; color: #04121a; padding: 14px 46px; border: none; border-radius: 40px;
+    background: linear-gradient(90deg, #00e5ff, #43ffd1);
+    box-shadow: 0 0 24px rgba(0, 229, 255, 0.55); transition: transform .12s ease, box-shadow .12s ease; }
+  .btn:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 0 36px rgba(0, 229, 255, 0.85); }
+  .btn:active { transform: scale(0.97); }
+
+  .go-score { font-size: 60px; font-weight: 800; color: #00e5ff; text-shadow: 0 0 20px rgba(0,229,255,0.7); }
+  .go-best { font-size: 16px; color: #ffd24d; letter-spacing: 2px; }
+
+  #muteBtn { position: absolute; right: 18px; bottom: 18px; z-index: 6; cursor: pointer;
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(0,229,255,0.4);
+    background: rgba(8,16,32,0.5); color: #9fe9ff; font-size: 18px; backdrop-filter: blur(6px); }
+  #muteBtn:hover { box-shadow: 0 0 16px rgba(0,229,255,0.4); }
+
+  #loading p { font-size: 16px; letter-spacing: 3px; color: #7fd6ff; }
+  .spinner { width: 42px; height: 42px; border: 3px solid rgba(0,229,255,0.2);
+    border-top-color: #00e5ff; border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="scene"></canvas>
+
+    <div class="hidden" id="progWrap">
+      <div id="progBar"><div id="progFill"></div></div>
+    </div>
+
+    <div class="hidden" id="hud">
+      <div class="hud-box">
+        <div class="hud-label">进度 PROGRESS</div>
+        <div class="hud-value" id="prog">0%</div>
+        <div class="hud-sub">最佳 · <span id="best">0%</span></div>
+      </div>
+      <div class="hud-box hud-right">
+        <div class="hud-label">宝石 GEMS</div>
+        <div class="hud-value" id="gems">0</div>
+        <div class="hud-sub"><span id="speed">0</span> km/h</div>
+      </div>
+    </div>
+
+    <div class="screen" id="overlay">
+      <div class="title">ROLLING NEON</div>
+      <div class="subtitle">滚 动 霓 虹</div>
+      <div class="hint">
+        收集宝石 · 踩绿色弹板起飞 · 躲开障碍 · 别掉下去<br>
+        <span class="key">←</span><span class="key">→</span> 移动 · <span class="key">空格</span> 跳跃（可二段跳）· 手机：拖动移动，轻点跳跃
+      </div>
+      <button class="btn" id="startBtn">开 始 游 戏</button>
+    </div>
+
+    <div class="screen hidden" id="gameover">
+      <div class="subtitle">游 戏 结 束</div>
+      <div class="go-score" id="goScore">0%</div>
+      <div class="go-best">宝石 <span id="goGems">0</span> · 最佳纪录 <span id="goBest">0%</span></div>
+      <button class="btn" id="retryBtn">再 来 一 局</button>
+    </div>
+
+    <div class="screen hidden" id="winScreen">
+      <div class="subtitle">完 美 通 关</div>
+      <div class="go-score" style="color:#ffe14d; text-shadow:0 0 20px rgba(255,225,77,0.7)">100%</div>
+      <div class="go-best">收集宝石 <span id="winGems">0</span> 颗</div>
+      <button class="btn" id="winRetryBtn">再 来 一 局</button>
+    </div>
+
+    <div class="screen" id="loading">
+      <div class="spinner"></div>
+      <p>正在加载霓虹世界…</p>
+    </div>
+
+    <button id="muteBtn" title="音效开关">♪</button>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+  // ===================== 常量 =====================
+  const TILE = 1.6, COLS = 7;
+  const BALL_R = 0.42;
+  const LEVEL_LEN = 600;              // 关卡总长（米）
+  const BASE_SPEED = 9, MAX_SPEED = 21;
+  const VIEW_AHEAD = 100, DESPAWN_Z = 14;
+  const X_CLAMP = 4.6;
+  const JUMP_V = 7.2, GRAVITY = 24;    // 跳跃：滞空约 0.6 秒，可越过缺口与矮障碍
+  const PAD_V = 11.5;                  // 弹板弹射初速：滞空约 0.96 秒，可飞跃长缺口
+
+  // ===================== 全局状态 =====================
+  let scene, camera, renderer, composer, bloom, clock, t = 0;
+  let gameState = 'menu';        // menu | playing | falling | dead | win
+  let ball;
+  let ballX = 0, targetX = 0, vy = 0, fallT = 0;
+  let airborne = false, jumpVy = 0, padGrace = 0, airJumpCd = 0, airJumps = 0;
+  let dist = 0, gems = 0, bestProg = 0, speed = BASE_SPEED;
+  let nextRow = 0, pathCol = 3;
+
+  const rows = new Map();        // rowIndex -> { tiles:[bool], items:[], meshes:[] }
+  const tilePool = [], gemPool = [], obsPool = [], padPool = [], burstPool = [];
+  const bursts = [], decors = [];
+  const keys = { left: false, right: false };
+  let lastPX = 0;
+
+  let tileGeo, gemGeo, gemMats = [], obsGeo, obsMat, padGeo, padMat, padMatUsed, particleGeo, particleMat;
+  let decorGeos = [], decorMats = [];
+
+  let audioCtx = null, muted = false;
+
+  const $ = (id) => document.getElementById(id);
+  const dom = {
+    hud: $('hud'), progWrap: $('progWrap'), overlay: $('overlay'), gameover: $('gameover'),
+    winScreen: $('winScreen'), loading: $('loading'),
+    prog: $('prog'), best: $('best'), gems: $('gems'), speed: $('speed'), progFill: $('progFill'),
+    goScore: $('goScore'), goGems: $('goGems'), goBest: $('goBest'), winGems: $('winGems'),
+    startBtn: $('startBtn'), retryBtn: $('retryBtn'), winRetryBtn: $('winRetryBtn'),
+    muteBtn: $('muteBtn'), canvas: $('scene')
+  };
+
+  bestProg = parseInt(localStorage.getItem('rollingneon_best') || '0', 10) || 0;
+
+  // ===================== 初始化 =====================
+  function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05060f);
+    scene.fog = new THREE.FogExp2(0x05060f, 0.009);
+
+    camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 400);
+    camera.position.set(0, 8.2, 10.5);
+    camera.lookAt(0, -0.5, -10);
+
+    renderer = new THREE.WebGLRenderer({ canvas: dom.canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.88;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.38, 0.5, 0.55);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+
+    scene.add(new THREE.HemisphereLight(0x33507a, 0x05060f, 0.7));
+    scene.add(new THREE.AmbientLight(0x335577, 0.35));
+    const dir = new THREE.DirectionalLight(0xbfe9ff, 0.85);
+    dir.position.set(4, 14, 6);
+    scene.add(dir);
+
+    // 深渊底面（增强坠落感）
+    const abyss = new THREE.Mesh(
+      new THREE.PlaneGeometry(300, 400),
+      new THREE.MeshBasicMaterial({ color: 0x02030a })
+    );
+    abyss.rotation.x = -Math.PI / 2;
+    abyss.position.set(0, -14, -80);
+    scene.add(abyss);
+
+    // 球体
+    const playerGeo = new THREE.SphereGeometry(BALL_R, 32, 32);
+    const playerMat = new THREE.MeshStandardMaterial({
+      color: 0x0a2a3a, emissive: 0x00e5ff, emissiveIntensity: 0.65, metalness: 0.7, roughness: 0.25
+    });
+    ball = new THREE.Mesh(playerGeo, playerMat);
+    ball.position.set(0, BALL_R, 0);
+    scene.add(ball);
+    const shell = new THREE.Mesh(
+      new THREE.SphereGeometry(BALL_R * 1.4, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    ball.add(shell);
+    const pl = new THREE.PointLight(0x00e5ff, 1.6, 14, 2);
+    pl.position.set(0, 1.4, 0);
+    ball.add(pl);
+
+    // 复用资源
+    tileGeo = new THREE.BoxGeometry(TILE - 0.1, 0.6, TILE - 0.1);
+    gemGeo = new THREE.OctahedronGeometry(0.32, 0);
+    const gcolors = [0x00e5ff, 0xff2bd6, 0xffe14d];
+    gemMats = gcolors.map(c => new THREE.MeshStandardMaterial({
+      color: c, emissive: c, emissiveIntensity: 1.0, metalness: 0.3, roughness: 0.2
+    }));
+    obsGeo = new THREE.BoxGeometry(1.15, 1.1, 1.15);
+    obsMat = new THREE.MeshStandardMaterial({ color: 0x3a0008, emissive: 0xff2d55, emissiveIntensity: 0.85, metalness: 0.3, roughness: 0.4 });
+    padGeo = new THREE.CylinderGeometry(0.55, 0.62, 0.14, 24);
+    padMat = new THREE.MeshStandardMaterial({ color: 0x0a3a1a, emissive: 0x51ff7a, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.3 });
+    padMatUsed = new THREE.MeshStandardMaterial({ color: 0x0a1a12, emissive: 0x2a5a3a, emissiveIntensity: 0.25, metalness: 0.3, roughness: 0.5 });
+    particleGeo = new THREE.TetrahedronGeometry(0.18);
+    particleMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+
+    // 两侧漂浮装饰（霓虹环 & 晶体）
+    decorGeos = [new THREE.TorusGeometry(1.1, 0.06, 8, 32), new THREE.OctahedronGeometry(0.6, 0), new THREE.TetrahedronGeometry(0.7, 0)];
+    const dcolors = [0x00b3ff, 0xff2bd6, 0x8a2bff, 0xffe14d];
+    decorMats = dcolors.map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+    for (let k = 0; k < 36; k++) {
+      const d = new THREE.Mesh(decorGeos[k % decorGeos.length], decorMats[k % decorMats.length].clone());
+      randomizeDecor(d, -140 + Math.random() * 150);
+      scene.add(d);
+      decors.push(d);
+    }
+
+    bindEvents();
+    clock = new THREE.Clock();
+    renderer.setAnimationLoop(animate);
+
+    dom.loading.classList.add('hidden');
+    dom.overlay.classList.remove('hidden');
+    dom.hud.classList.remove('hidden');
+    dom.progWrap.classList.remove('hidden');
+    updateHUD();
+  }
+
+  function randomizeDecor(d, z) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    d.position.set(side * (8 + Math.random() * 12), 0.5 + Math.random() * 7, z);
+    d.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    d.scale.setScalar(0.6 + Math.random() * 1.4);
+  }
+
+  // ===================== 对象池 =====================
+  function acquireTile() {
+    let m = tilePool.pop();
+    if (!m) {
+      m = new THREE.Mesh(tileGeo, new THREE.MeshStandardMaterial({ metalness: 0.35, roughness: 0.55 }));
+      scene.add(m);
+    }
+    m.visible = true;
+    return m;
+  }
+  function acquireGem() {
+    let m = gemPool.pop();
+    if (!m) { m = new THREE.Mesh(gemGeo, gemMats[0]); scene.add(m); }
+    m.visible = true;
+    return m;
+  }
+  function acquireObstacle() {
+    let m = obsPool.pop();
+    if (!m) { m = new THREE.Mesh(obsGeo, obsMat); scene.add(m); }
+    m.visible = true;
+    return m;
+  }
+  function acquirePad() {
+    let m = padPool.pop();
+    if (!m) { m = new THREE.Mesh(padGeo, padMat); scene.add(m); }
+    m.visible = true;
+    m.material = padMat;
+    m.scale.set(1, 1, 1);
+    m.userData.used = false;
+    return m;
+  }
+  function releaseRow(rec) {
+    for (const m of rec.meshes) { m.visible = false; tilePool.push(m); }
+    for (const it of rec.items) {
+      it.mesh.visible = false;
+      if (it.type === 'gem') gemPool.push(it.mesh);
+      else if (it.type === 'pad') padPool.push(it.mesh);
+      else if (it.type === 'obstacle') obsPool.push(it.mesh);
+    }
+  }
+
+  // ===================== 赛道生成 =====================
+  // 安全路径随机游走（相邻两行的安全列必定相邻或相同），其余方块随机出现
+  function spawnRow() {
+    const i = nextRow++;
+    if (i > 6 && Math.random() < 0.6) {
+      pathCol = Math.max(0, Math.min(COLS - 1, pathCol + (Math.random() < 0.5 ? -1 : 1)));
+    }
+    const z = -i * TILE;
+    const prog = Math.min(1, (i * TILE) / LEVEL_LEN);
+    const gapRow = i > 12 && Math.random() < 0.05;         // 更稀少的"断桥"行：只剩安全列
+    const tiles = new Array(COLS).fill(false);
+    const rec = { tiles, items: [], meshes: [] };
+    const obsP = 0.07 + prog * 0.11;
+
+    for (let c = 0; c < COLS; c++) {
+      if (c === pathCol) tiles[c] = true;
+      else if (!gapRow && Math.random() < (i < 10 ? 0.97 : 0.92 - prog * 0.06)) tiles[c] = true;
+      if (!tiles[c]) continue;
+
+      const m = acquireTile();
+      const hue = (i * 0.011) % 1;                          // 彩虹色随距离流动
+      m.material.color.setHSL(hue, 0.5, 0.07);
+      m.material.emissive.setHSL(hue, 0.9, 0.15);
+      m.position.set((c - (COLS - 1) / 2) * TILE, -0.3, z);
+      rec.meshes.push(m);
+
+      if (c === pathCol && i > 15 && Math.random() < 0.08) {
+        // 弹板：只出现在安全路径上，踩上去自动弹飞
+        const p = acquirePad();
+        p.position.set((c - (COLS - 1) / 2) * TILE, 0.07, z);
+        rec.items.push({ mesh: p, type: 'pad', col: c });
+      } else if (c === pathCol && i > 4 && Math.random() < 0.30) {
+        const g = acquireGem();
+        g.material = gemMats[(Math.random() * gemMats.length) | 0];
+        g.position.set((c - (COLS - 1) / 2) * TILE, 0.75, z);
+        rec.items.push({ mesh: g, type: 'gem', col: c });
+      } else if (c !== pathCol && i > 8 && Math.random() < obsP) {
+        const o = acquireObstacle();
+        o.position.set((c - (COLS - 1) / 2) * TILE, 0.55, z);
+        rec.items.push({ mesh: o, type: 'obstacle', col: c });
+      }
+    }
+    rows.set(i, rec);
+  }
+
+  function ensureRows() {
+    while (nextRow * TILE < dist + VIEW_AHEAD) spawnRow();
+    for (const [i, rec] of rows) {
+      if (i * TILE < dist - DESPAWN_Z) { releaseRow(rec); rows.delete(i); }
+    }
+  }
+
+  // ===================== 爆裂粒子 =====================
+  function spawnBurst(pos, color, n = 14) {
+    for (let k = 0; k < n; k++) {
+      let p = burstPool.pop();
+      if (!p) { p = new THREE.Mesh(particleGeo, particleMat.clone()); scene.add(p); }
+      p.visible = true;
+      p.material.color.set(color);
+      p.material.opacity = 1;
+      p.position.copy(pos);
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).normalize().multiplyScalar(3 + Math.random() * 3);
+      p.userData = { vel: dir, life: 0.6, max: 0.6 };
+      p.scale.setScalar(1);
+      bursts.push(p);
+    }
+  }
+
+  // ===================== 游戏流程 =====================
+  function resetWorld() {
+    for (const [, rec] of rows) releaseRow(rec);
+    rows.clear();
+    dist = 0; gems = 0; speed = BASE_SPEED;
+    nextRow = 0; pathCol = 3;
+    ballX = 0; targetX = 0; vy = 0;
+    airborne = false; jumpVy = 0; padGrace = 0; airJumpCd = 0; airJumps = 0;
+    ball.position.set(0, BALL_R, 0);
+    ensureRows();
+  }
+
+  function startGame() {
+    dom.overlay.classList.add('hidden');
+    dom.gameover.classList.add('hidden');
+    dom.winScreen.classList.add('hidden');
+    gameState = 'playing';
+    resetWorld();
+    ensureAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    updateHUD();
+  }
+
+  function progressPct() { return Math.min(100, Math.floor(dist / LEVEL_LEN * 100)); }
+
+  function gameOver() {
+    gameState = 'dead';
+    const pct = progressPct();
+    if (pct > bestProg) { bestProg = pct; localStorage.setItem('rollingneon_best', String(bestProg)); }
+    dom.goScore.textContent = pct + '%';
+    dom.goGems.textContent = gems;
+    dom.goBest.textContent = bestProg + '%';
+    dom.gameover.classList.remove('hidden');
+    playHit();
+  }
+
+  function winGame() {
+    gameState = 'win';
+    bestProg = 100;
+    localStorage.setItem('rollingneon_best', '100');
+    dom.winGems.textContent = gems;
+    dom.winScreen.classList.remove('hidden');
+    spawnBurst(ball.position, 0xffe14d, 26);
+    spawnBurst(ball.position, 0xff2bd6, 26);
+    playWin();
+  }
+
+  function startFall() {
+    if (gameState !== 'playing') return;
+    gameState = 'falling';
+    vy = 0; fallT = 0;
+    playFall();
+  }
+
+  function moveX(d) { if (gameState === 'playing') targetX = Math.max(-X_CLAMP, Math.min(X_CLAMP, targetX + d)); }
+
+  function tryJump() {
+    if (gameState !== 'playing') return;
+    if (airborne) {
+      // 二段跳：空中只有 1 次机会，0.25 秒防误触间隔
+      if (airJumps <= 0 || airJumpCd > 0) return;
+      airJumps--;
+      airJumpCd = 0.25;
+      jumpVy = JUMP_V * 0.92;
+      spawnBurst(ball.position, 0x00e5ff, 8);
+    } else {
+      jumpVy = JUMP_V;
+      airJumps = 1;
+    }
+    airborne = true;
+    playJump();
+  }
+
+  // ===================== 更新 =====================
+  function updatePlay(dt) {
+    speed = Math.min(BASE_SPEED + dist * 0.011, MAX_SPEED);
+    dist += speed * dt;
+    ensureRows();
+
+    // 键盘持续移动 + 拖动目标
+    if (keys.left) moveX(-8 * dt);
+    if (keys.right) moveX(8 * dt);
+    ballX += (targetX - ballX) * Math.min(1, dt * 10);
+    ballX = Math.max(-X_CLAMP, Math.min(X_CLAMP, ballX));
+    ball.position.x = ballX;
+    ball.position.z = -dist;
+    ball.rotation.x -= (speed * dt) / BALL_R;
+
+    // 跳跃物理：空中不检测脚下，落地瞬间才判定是否踩空
+    if (airborne) {
+      jumpVy -= GRAVITY * dt;
+      ball.position.y += jumpVy * dt;
+      if (ball.position.y <= BALL_R) { ball.position.y = BALL_R; airborne = false; airJumps = 0; }
+    } else {
+      ball.position.y = BALL_R + Math.sin(t * 5) * 0.03;
+    }
+
+    // 脚下是否有砖？（仅落地时判定；边缘宽容：球心附近 3×3 范围内有任意一块砖即算踩住）
+    const rowIdx = Math.round(dist / TILE);
+    if (!airborne) {
+      const col0 = Math.max(0, Math.min(COLS - 1, Math.round(ballX / TILE + (COLS - 1) / 2)));
+      let supported = false;
+      for (let r = rowIdx - 1; r <= rowIdx + 1 && !supported; r++) {
+        if (Math.abs(r * TILE - dist) > TILE * 0.62) continue;
+        const rec = rows.get(r);
+        if (!rec) continue;
+        for (let c = Math.max(0, col0 - 1); c <= Math.min(COLS - 1, col0 + 1); c++) {
+          if (rec.tiles[c] && Math.abs((c - (COLS - 1) / 2) * TILE - ballX) < TILE * 0.62) { supported = true; break; }
+        }
+      }
+      if (!supported) { startFall(); return; }
+    }
+
+    // 邻近行物品碰撞 / 收集（障碍可跳过：球心高于障碍顶就安全；弹板弹起后短暂免碰撞，避免贴边误判）
+    const bz = -dist;
+    if (padGrace > 0) padGrace -= dt;
+    if (airJumpCd > 0) airJumpCd -= dt;
+    for (let r = rowIdx - 1; r <= rowIdx + 1; r++) {
+      const rr = rows.get(r);
+      if (!rr) continue;
+      for (const it of rr.items) {
+        const dx = Math.abs(ballX - it.mesh.position.x);
+        const dz = Math.abs(bz - it.mesh.position.z);
+        if (it.type === 'pad') {
+          if (!airborne && !it.mesh.userData.used && dx < 0.7 && dz < 0.7) {
+            it.mesh.userData.used = true;
+            it.mesh.material = padMatUsed;
+            it.mesh.scale.set(1, 0.4, 1);
+            airborne = true;
+            jumpVy = PAD_V;
+            padGrace = 0.3;
+            spawnBurst(it.mesh.position, 0x51ff7a, 16);
+            playPad();
+          }
+        } else if (it.type === 'gem') {
+          if (dx < 0.85 && dz < 0.85) {
+            gems++;
+            spawnBurst(it.mesh.position, it.mesh.material.color.getHex(), 12);
+            playCollect();
+            it.mesh.visible = false;
+            it.type = 'gone';
+          }
+        } else if (it.type === 'obstacle') {
+          if (padGrace <= 0 && ball.position.y < 1.3 && dx < 0.5 + BALL_R * 0.6 && dz < 0.5 + BALL_R * 0.6) {
+            spawnBurst(ball.position, 0xff2d55, 20);
+            gameOver();
+            return;
+          }
+        }
+      }
+    }
+
+    if (dist >= LEVEL_LEN) { winGame(); return; }
+    updateHUD();
+  }
+
+  function updateFalling(dt) {
+    fallT += dt;
+    vy -= 26 * dt;
+    ball.position.y += vy * dt;
+    if (fallT > 0.9) { gameOver(); }
+  }
+
+  function updateItems(dt) {
+    for (const [, rec] of rows) {
+      for (const it of rec.items) {
+        if (it.type === 'gem') {
+          it.mesh.rotation.y += dt * 2.5;
+          it.mesh.position.y = 0.75 + Math.sin(t * 3 + it.mesh.position.x) * 0.12;
+        } else if (it.type === 'obstacle') {
+          it.mesh.rotation.y += dt * 0.8;
+        } else if (it.type === 'pad') {
+          if (!it.mesh.userData.used) {
+            it.mesh.rotation.y += dt * 2;
+            const s = 1 + Math.sin(t * 6) * 0.08;
+            it.mesh.scale.set(s, 1, s);
+          }
+        }
+      }
+    }
+  }
+
+  function updateBursts(dt) {
+    for (let i = bursts.length - 1; i >= 0; i--) {
+      const p = bursts[i];
+      p.userData.life -= dt;
+      if (p.userData.life <= 0) { p.visible = false; burstPool.push(p); bursts.splice(i, 1); continue; }
+      p.position.addScaledVector(p.userData.vel, dt);
+      p.userData.vel.y -= 9 * dt;
+      p.material.opacity = Math.max(0, p.userData.life / p.userData.max);
+      p.scale.setScalar(0.3 + p.userData.life);
+    }
+  }
+
+  function updateDecor(dt, moving) {
+    for (const d of decors) {
+      d.rotation.x += dt * 0.4; d.rotation.y += dt * 0.3;
+      if (moving) {
+        d.position.z += speed * dt;
+        if (d.position.z > 16) randomizeDecor(d, d.position.z - 150);
+      }
+    }
+  }
+
+  function updateHUD() {
+    const pct = progressPct();
+    dom.prog.textContent = pct + '%';
+    dom.progFill.style.width = pct + '%';
+    dom.best.textContent = bestProg + '%';
+    dom.gems.textContent = gems;
+    dom.speed.textContent = Math.round(speed * 3.2);
+  }
+
+  // ===================== 主循环 =====================
+  function animate() {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    t += dt;
+
+    if (gameState === 'playing') {
+      updatePlay(dt);
+      updateItems(dt);
+    } else if (gameState === 'falling') {
+      updateFalling(dt);
+    } else {
+      ball.rotation.y += dt * 0.5;
+      ball.position.y = BALL_R + Math.sin(t * 2) * 0.1;
+    }
+
+    updateBursts(dt);
+    updateDecor(dt, gameState === 'playing' || gameState === 'falling');
+
+    camera.position.x += (ball.position.x * 0.45 - camera.position.x) * Math.min(1, dt * 6);
+    camera.position.y += (8.2 - camera.position.y) * Math.min(1, dt * 4);
+    camera.position.z += ((-dist + 10.5) - camera.position.z) * Math.min(1, dt * 8);
+    camera.lookAt(ball.position.x * 0.25, -0.5, -dist - 10);
+    composer.render();
+  }
+
+  // ===================== 音频 =====================
+  function ensureAudio() {
+    if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audioCtx = null; } }
+  }
+  function tone(type, f0, f1, dur, vol = 0.25) {
+    if (muted || !audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t0);
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur * 0.8);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function playCollect() { tone('triangle', 740, 1320, 0.18); }
+  function playJump() { tone('square', 300, 620, 0.16, 0.14); }
+  function playPad() { tone('square', 200, 980, 0.3, 0.28); }
+  function playHit() { tone('sawtooth', 180, 40, 0.45, 0.4); }
+  function playFall() { tone('sine', 500, 90, 0.6, 0.3); }
+  function playWin() {
+    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone('triangle', f, f * 1.02, 0.28, 0.3), i * 140));
+  }
+
+  // ===================== 事件 =====================
+  function bindEvents() {
+    addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowleft' || k === 'a') keys.left = true;
+      else if (k === 'arrowright' || k === 'd') keys.right = true;
+      else if (k === ' ' || k === 'arrowup' || k === 'w') {
+        if (gameState === 'playing') tryJump();
+        else if (gameState !== 'falling') startGame();
+        e.preventDefault();
+      }
+      else if (k === 'enter') {
+        if (gameState !== 'playing' && gameState !== 'falling') startGame();
+        e.preventDefault();
+      }
+    });
+    addEventListener('keyup', (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowleft' || k === 'a') keys.left = false;
+      else if (k === 'arrowright' || k === 'd') keys.right = false;
+    });
+
+    dom.startBtn.addEventListener('click', startGame);
+    dom.retryBtn.addEventListener('click', startGame);
+    dom.winRetryBtn.addEventListener('click', startGame);
+
+    // 触控：按住拖动 = 左右移动；轻点（几乎没移动）= 跳跃
+    let pDown = false, pStartX = 0, pStartT = 0, pMoved = false;
+    dom.canvas.addEventListener('pointerdown', (e) => {
+      if (gameState !== 'playing') return;
+      pDown = true; pMoved = false; pStartX = e.clientX; lastPX = e.clientX; pStartT = performance.now();
+    });
+    addEventListener('pointermove', (e) => {
+      if (!pDown || gameState !== 'playing') return;
+      if (Math.abs(e.clientX - pStartX) > 8) pMoved = true;
+      if (pMoved) moveX((e.clientX - lastPX) * 0.014);
+      lastPX = e.clientX;
+    });
+    addEventListener('pointerup', () => {
+      if (!pDown) return;
+      pDown = false;
+      if (!pMoved && performance.now() - pStartT < 300) tryJump();
+    });
+    addEventListener('pointercancel', () => { pDown = false; });
+
+    dom.muteBtn.addEventListener('click', () => {
+      muted = !muted;
+      dom.muteBtn.textContent = muted ? '✕' : '♪';
+      dom.muteBtn.style.color = muted ? '#ff6b8a' : '#9fe9ff';
+    });
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
+      bloom.setSize(innerWidth, innerHeight);
+    });
+  }
+
+  // ===================== 启动 =====================
+  try {
+    init();
+  } catch (err) {
+    dom.loading.innerHTML = '<p style="color:#ff6b8a">加载失败，请检查网络或使用本地服务器打开。</p>';
+    console.error(err);
+  }
+  </script>
+</body>
+</html>
