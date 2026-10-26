@@ -125,11 +125,21 @@
     <button id="muteBtn" title="音效开关">♪</button>
   </div>
 
+  <script>
+  // 加载兜底：8 秒后仍在加载页则给出提示（正常情况下模块脚本会隐藏它）
+  setTimeout(function () {
+    var l = document.getElementById('loading');
+    if (l && !l.classList.contains('hidden')) {
+      l.innerHTML = '<p style="color:#ff6b8a">资源加载失败，请检查网络后刷新重试。</p>';
+    }
+  }, 8000);
+  </script>
+
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "./lib/three.module.js",
+      "three/addons/": "./lib/addons/"
     }
   }
   </script>
