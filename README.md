@@ -28,9 +28,9 @@
 
 ## 🚀 运行方式
 
-方式一：直接双击打开 `index.html`（Three.js 通过 jsDelivr CDN 加载，需联网）。
+Three.js 已内置在 `lib/` 目录中，**无需联网、不依赖任何 CDN**。
 
-方式二（推荐）：本地起一个静态服务器：
+方式一：本地起一个静态服务器后访问（推荐，手机也可局域网访问）：
 
 ```bash
 # Python
@@ -41,9 +41,14 @@ npx serve .
 
 然后浏览器访问 `http://localhost:8080`。
 
+方式二：直接访问在线版：<https://liu123915.github.io/rolling-neon/>
+
 ## 📁 文件结构
 
 ```
 rolling-neon/
-└── index.html   # 全部代码（HTML + CSS + JS 单文件）
+├── index.html              # 页面结构 + 样式 + 游戏主逻辑
+└── lib/
+    ├── three.module.js     # Three.js r160（本地内置）
+    └── addons/             # 后处理插件（Bloom 辉光等）
 ```
