@@ -254,27 +254,27 @@
 
     const playerGeo = new THREE.SphereGeometry(BALL_R, 64, 64);
     ballMat = new THREE.MeshPhysicalMaterial({
-      color: 0x112a33, metalness: 0.9, roughness: 0.13,
-      clearcoat: 1.0, clearcoatRoughness: 0.06,
-      iridescence: 1.0, iridescenceIOR: 1.3, iridescenceThicknessRange: [100, 500],
+      color: 0x2a7a8f, metalness: 0.95, roughness: 0.1,
+      clearcoat: 1.0, clearcoatRoughness: 0.05,
+      iridescence: 0.7, iridescenceIOR: 1.3, iridescenceThicknessRange: [100, 400],
       bumpMap: hexTex, bumpScale: 0.55,
-      emissive: 0x00e5ff, emissiveIntensity: 0.2, envMapIntensity: 1.8
+      emissive: 0x00e5ff, emissiveIntensity: 0.12, envMapIntensity: 2.2
     });
     ball = new THREE.Mesh(playerGeo, ballMat);
     ball.position.set(0, BALL_R, 0);
     scene.add(ball);
-    // 菲涅尔边缘光环（Rim Light）
+    // 菲涅尔边缘光（减弱，只留一点轮廓光，不遮盖球体本身）
     const shell = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL_R * 1.04, 48, 48),
+      new THREE.SphereGeometry(BALL_R * 1.02, 48, 48),
       new THREE.ShaderMaterial({
         uniforms: { uColor: { value: new THREE.Color(0x00e5ff) } },
         vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
-        fragmentShader: 'uniform vec3 uColor; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0); gl_FragColor = vec4(uColor * f * 1.6, f * 0.9); }',
+        fragmentShader: 'uniform vec3 uColor; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 4.5); gl_FragColor = vec4(uColor * f * 0.8, f * 0.5); }',
         transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
       })
     );
     ball.add(shell);
-    const pl = new THREE.PointLight(0x00e5ff, 1.4, 12, 2);
+    const pl = new THREE.PointLight(0x00e5ff, 1.0, 10, 2);
     pl.position.set(0, 1.4, 0);
     ball.add(pl);
 
@@ -695,13 +695,13 @@
       if (posHistory.length > 90) posHistory.shift();
       for (let i = 0; i < trailMeshes.length; i++) {
         const m = trailMeshes[i];
-        const idx = posHistory.length - 1 - (i + 1) * 6;
+        const idx = posHistory.length - 1 - (i + 1) * 8;
         if (idx >= 0) {
           m.position.copy(posHistory[idx]);
           m.visible = true;
           const k = 1 - i / trailMeshes.length;
-          m.scale.setScalar(0.22 + k * 0.55);
-          m.material.opacity = k * 0.15;
+          m.scale.setScalar(0.18 + k * 0.4);
+          m.material.opacity = k * 0.12;
         } else m.visible = false;
       }
       blob.visible = true;
@@ -720,7 +720,7 @@
     camera.position.y += (8.2 - camera.position.y) * Math.min(1, dt * 4);
     camera.position.z += ((-dist + 10.5) - camera.position.z) * Math.min(1, dt * 8);
     camera.lookAt(ball.position.x * 0.25, -0.5, -dist - 10);
-    if (ballMat) ballMat.emissiveIntensity = 0.18 + Math.sin(t * 3) * 0.07;
+    if (ballMat) ballMat.emissiveIntensity = 0.1 + Math.sin(t * 3) * 0.04;
     composer.render();
   }
 
