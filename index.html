@@ -280,7 +280,7 @@
 
     // 拖尾光迹（历史位置采样）与地面光晕
     const trailGeo = new THREE.SphereGeometry(BALL_R, 16, 16);
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 5; i++) {
       const tm = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
         color: 0x00e5ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false
       }));
@@ -701,7 +701,7 @@
           m.visible = true;
           const k = 1 - i / trailMeshes.length;
           m.scale.setScalar(0.22 + k * 0.55);
-          m.material.opacity = k * 0.22;
+          m.material.opacity = k * 0.15;
         } else m.visible = false;
       }
       blob.visible = true;
