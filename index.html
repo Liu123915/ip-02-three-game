@@ -233,7 +233,7 @@
       const x = c.getContext('2d');
       x.fillStyle = '#808080'; x.fillRect(0, 0, s, s);
       x.strokeStyle = '#b4b4b4'; x.lineWidth = 2.5;
-      const r = 15, dx = r * 1.5, dy = r * Math.sqrt(3);
+      const r = 26, dx = r * 1.5, dy = r * Math.sqrt(3);
       for (let col = -1; col * dx < s + r; col++) {
         for (let row = -1; row * dy < s + r; row++) {
           const cx = col * dx, cy = row * dy + (Math.abs(col) % 2 ? dy / 2 : 0);
@@ -248,7 +248,7 @@
       }
       const t = new THREE.CanvasTexture(c);
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(3, 3);
+      t.repeat.set(2, 2);
       return t;
     })();
 
@@ -280,7 +280,7 @@
 
     // 拖尾光迹（历史位置采样）与地面光晕
     const trailGeo = new THREE.SphereGeometry(BALL_R, 16, 16);
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 8; i++) {
       const tm = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
         color: 0x00e5ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false
       }));
@@ -695,13 +695,13 @@
       if (posHistory.length > 90) posHistory.shift();
       for (let i = 0; i < trailMeshes.length; i++) {
         const m = trailMeshes[i];
-        const idx = posHistory.length - 1 - (i + 1) * 4;
+        const idx = posHistory.length - 1 - (i + 1) * 6;
         if (idx >= 0) {
           m.position.copy(posHistory[idx]);
           m.visible = true;
           const k = 1 - i / trailMeshes.length;
-          m.scale.setScalar(0.25 + k * 0.62);
-          m.material.opacity = k * 0.3;
+          m.scale.setScalar(0.22 + k * 0.55);
+          m.material.opacity = k * 0.22;
         } else m.visible = false;
       }
       blob.visible = true;
