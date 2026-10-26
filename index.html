@@ -125,21 +125,11 @@
     <button id="muteBtn" title="音效开关">♪</button>
   </div>
 
-  <script>
-  // 加载兜底：8 秒后仍在加载页则给出提示（正常情况下模块脚本会隐藏它）
-  setTimeout(function () {
-    var l = document.getElementById('loading');
-    if (l && !l.classList.contains('hidden')) {
-      l.innerHTML = '<p style="color:#ff6b8a">资源加载失败，请检查网络后刷新重试。</p>';
-    }
-  }, 8000);
-  </script>
-
   <script type="importmap">
   {
     "imports": {
-      "three": "./lib/three.module.js",
-      "three/addons/": "./lib/addons/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     }
   }
   </script>
@@ -150,6 +140,7 @@
   import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+  import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
   // ===================== 常量 =====================
   const TILE = 1.6, COLS = 7;
@@ -172,7 +163,8 @@
 
   const rows = new Map();        // rowIndex -> { tiles:[bool], items:[], meshes:[] }
   const tilePool = [], gemPool = [], obsPool = [], padPool = [], burstPool = [];
-  const bursts = [], decors = [];
+  const bursts = [], decors = [], trailMeshes = [], posHistory = [];
+  let blob = null;
   const keys = { left: false, right: false };
   let lastPX = 0;
 
@@ -231,32 +223,65 @@
     abyss.position.set(0, -14, -80);
     scene.add(abyss);
 
-    // 球体
-    const playerGeo = new THREE.SphereGeometry(BALL_R, 32, 32);
-    const playerMat = new THREE.MeshStandardMaterial({
-      color: 0x0a2a3a, emissive: 0x00e5ff, emissiveIntensity: 0.65, metalness: 0.7, roughness: 0.25
+    // 球体：PBR 物理材质（金属 + 清漆 + 彩虹镀膜），环境反射来自 RoomEnvironment
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    const playerGeo = new THREE.SphereGeometry(BALL_R, 48, 48);
+    const playerMat = new THREE.MeshPhysicalMaterial({
+      color: 0x0c2530, metalness: 0.85, roughness: 0.16,
+      clearcoat: 1.0, clearcoatRoughness: 0.1,
+      iridescence: 0.85, iridescenceIOR: 1.3, iridescenceThicknessRange: [120, 420],
+      emissive: 0x00e5ff, emissiveIntensity: 0.22, envMapIntensity: 1.5
     });
     ball = new THREE.Mesh(playerGeo, playerMat);
     ball.position.set(0, BALL_R, 0);
     scene.add(ball);
     const shell = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL_R * 1.4, 32, 32),
-      new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending, depthWrite: false })
+      new THREE.SphereGeometry(BALL_R * 1.32, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false })
     );
     ball.add(shell);
-    const pl = new THREE.PointLight(0x00e5ff, 1.6, 14, 2);
+    const pl = new THREE.PointLight(0x00e5ff, 1.4, 12, 2);
     pl.position.set(0, 1.4, 0);
     ball.add(pl);
+
+    // 拖尾光迹（历史位置采样）与地面光晕
+    const trailGeo = new THREE.SphereGeometry(BALL_R, 16, 16);
+    for (let i = 0; i < 14; i++) {
+      const tm = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
+        color: 0x00e5ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      tm.visible = false;
+      scene.add(tm);
+      trailMeshes.push(tm);
+    }
+    const blobTex = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, 'rgba(0,229,255,0.55)');
+      g.addColorStop(1, 'rgba(0,229,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+      return new THREE.CanvasTexture(c);
+    })();
+    blob = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.7, 1.7),
+      new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    blob.rotation.x = -Math.PI / 2;
+    blob.visible = false;
+    scene.add(blob);
 
     // 复用资源
     tileGeo = new THREE.BoxGeometry(TILE - 0.1, 0.6, TILE - 0.1);
     gemGeo = new THREE.OctahedronGeometry(0.32, 0);
     const gcolors = [0x00e5ff, 0xff2bd6, 0xffe14d];
     gemMats = gcolors.map(c => new THREE.MeshStandardMaterial({
-      color: c, emissive: c, emissiveIntensity: 1.0, metalness: 0.3, roughness: 0.2
+      color: c, emissive: c, emissiveIntensity: 1.0, metalness: 0.3, roughness: 0.2, envMapIntensity: 0.7
     }));
     obsGeo = new THREE.BoxGeometry(1.15, 1.1, 1.15);
-    obsMat = new THREE.MeshStandardMaterial({ color: 0x3a0008, emissive: 0xff2d55, emissiveIntensity: 0.85, metalness: 0.3, roughness: 0.4 });
+    obsMat = new THREE.MeshStandardMaterial({ color: 0x3a0008, emissive: 0xff2d55, emissiveIntensity: 0.85, metalness: 0.3, roughness: 0.4, envMapIntensity: 0.5 });
     padGeo = new THREE.CylinderGeometry(0.55, 0.62, 0.14, 24);
     padMat = new THREE.MeshStandardMaterial({ color: 0x0a3a1a, emissive: 0x51ff7a, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.3 });
     padMatUsed = new THREE.MeshStandardMaterial({ color: 0x0a1a12, emissive: 0x2a5a3a, emissiveIntensity: 0.25, metalness: 0.3, roughness: 0.5 });
@@ -296,7 +321,7 @@
   function acquireTile() {
     let m = tilePool.pop();
     if (!m) {
-      m = new THREE.Mesh(tileGeo, new THREE.MeshStandardMaterial({ metalness: 0.35, roughness: 0.55 }));
+      m = new THREE.Mesh(tileGeo, new THREE.MeshStandardMaterial({ metalness: 0.35, roughness: 0.55, envMapIntensity: 0.3 }));
       scene.add(m);
     }
     m.visible = true;
@@ -631,6 +656,33 @@
 
     updateBursts(dt);
     updateDecor(dt, gameState === 'playing' || gameState === 'falling');
+
+    // 拖尾与地面光晕
+    if (gameState === 'playing' || gameState === 'falling') {
+      posHistory.push(ball.position.clone());
+      if (posHistory.length > 90) posHistory.shift();
+      for (let i = 0; i < trailMeshes.length; i++) {
+        const m = trailMeshes[i];
+        const idx = posHistory.length - 1 - (i + 1) * 4;
+        if (idx >= 0) {
+          m.position.copy(posHistory[idx]);
+          m.visible = true;
+          const k = 1 - i / trailMeshes.length;
+          m.scale.setScalar(0.25 + k * 0.62);
+          m.material.opacity = k * 0.3;
+        } else m.visible = false;
+      }
+      blob.visible = true;
+      blob.position.set(ball.position.x, 0.03, ball.position.z);
+      const h = Math.max(0, ball.position.y - BALL_R);
+      const s = Math.max(0.35, 1 - h * 0.35);
+      blob.scale.setScalar(s);
+      blob.material.opacity = 0.55 * s;
+    } else {
+      for (const m of trailMeshes) m.visible = false;
+      blob.visible = false;
+      posHistory.length = 0;
+    }
 
     camera.position.x += (ball.position.x * 0.45 - camera.position.x) * Math.min(1, dt * 6);
     camera.position.y += (8.2 - camera.position.y) * Math.min(1, dt * 4);
